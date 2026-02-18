@@ -3,6 +3,7 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from sqlalchemy import func
 from models.models import db, Habit, HabitCompletion, UserStats
 
+
 completion_parser = reqparse.RequestParser()
 completion_parser.add_argument("habit_id", type=int, required=True)
 # Mantidos por compatibilidade, mas o backend NÃO confia neles:
@@ -88,7 +89,19 @@ class CompletionResource(Resource):
         if not habit:
             return {"message": "Hábito não encontrado"}, 404
 
-        # ✅ Pontos SEMPRE vêm do banco (não confia no front)
+        # 🔥 BLOQUEIO: só pode concluir 1x por dia
+        already_completed_today = (
+            db.session.query(HabitCompletion.id)
+            .filter(HabitCompletion.user_id == user_id)
+            .filter(HabitCompletion.habit_id == habit_id)
+            .filter(func.date(HabitCompletion.completed_at) == func.curdate())
+            .first()
+        )
+
+        if already_completed_today:
+            return {"message": "Você já concluiu este hábito hoje."}, 400
+
+        # ✅ Pontos SEMPRE vêm do banco
         points = int(habit.points or 0)
 
         # ✅ Garante stats
@@ -101,7 +114,7 @@ class CompletionResource(Resource):
                 current_exp=0,
                 exp_to_next_level=100,
                 achievements={},
-                longest_streak=0,          # aqui fica recorde GLOBAL diário (opcional)
+                longest_streak=0,
                 total_habits_completed=0,
             )
             db.session.add(stats)
@@ -112,45 +125,34 @@ class CompletionResource(Resource):
             user_id=user_id,
             points_earned=points,
             notes=notes,
-            streak_day=None,  # vamos setar depois, com o valor real
+            streak_day=1,  # agora sempre 1 por dia
         )
         db.session.add(new_completion)
 
-        # ✅ Atualiza total do hábito (sempre)
+        # ✅ Atualiza total do hábito
         habit.total_completions = int(habit.total_completions or 0) + 1
 
-        # 🔥 Força flush pra contar incluindo essa conclusão recém inserida
-        db.session.flush()
+        # Atualiza streak diária (agora sempre 1)
+        habit.streak = 1
+        habit.best_streak = max(int(habit.best_streak or 0), 1)
 
-        # ✅ SEQUÊNCIA DIÁRIA POR HÁBITO (zera amanhã automaticamente)
-        today_habit_count = (
-            db.session.query(func.count(HabitCompletion.id))
-            .filter(HabitCompletion.user_id == user_id)
-            .filter(HabitCompletion.habit_id == habit_id)
-            .filter(func.date(HabitCompletion.completed_at) == func.curdate())
-            .scalar()
-        ) or 0
-
-        # ✅ Atualiza campos do hábito usados no card
-        habit.streak = int(today_habit_count)  # Sequência (hoje)
-        habit.best_streak = max(int(habit.best_streak or 0), int(today_habit_count))  # Recorde
-
-        # (opcional) salva na completion o streak do dia
-        new_completion.streak_day = int(today_habit_count)
-
-        # ✅ Atualiza stats do usuário (pontos/exp/total concluídos)
+        # ✅ Atualiza stats do usuário
         stats.total_points = int(stats.total_points or 0) + points
         stats.current_exp = int(stats.current_exp or 0) + points
         stats.total_habits_completed = int(stats.total_habits_completed or 0) + 1
 
-        # ✅ (Opcional) recorde GLOBAL diário (quantas conclusões no dia, somando todos hábitos)
+        # Conta total de conclusões do dia (todos hábitos)
         today_total_count = (
             db.session.query(func.count(HabitCompletion.id))
             .filter(HabitCompletion.user_id == user_id)
             .filter(func.date(HabitCompletion.completed_at) == func.curdate())
             .scalar()
         ) or 0
-        stats.longest_streak = max(int(stats.longest_streak or 0), int(today_total_count))
+
+        stats.longest_streak = max(
+            int(stats.longest_streak or 0),
+            int(today_total_count)
+        )
 
         # Level up
         while stats.current_exp >= stats.exp_to_next_level:
@@ -166,7 +168,7 @@ class CompletionResource(Resource):
             "message": "Conclusão registrada",
             "habit_id": habit_id,
             "points_added": points,
-            "habit_today_streak": int(today_habit_count),
+            "habit_today_streak": 1,
             "habit_record": int(habit.best_streak or 0),
             "today_total_completions": int(today_total_count),
         }, 201

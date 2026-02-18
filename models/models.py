@@ -77,3 +77,32 @@ class UserStats(db.Model):
     total_habits_completed = db.Column(db.Integer, default=0)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class FriendRequest(db.Model):
+        __tablename__ = "friend_requests"
+
+        id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+
+        sender_id = db.Column(
+            db.Integer,
+            db.ForeignKey("users.id"),
+            nullable=False
+        )
+
+        receiver_id = db.Column(
+            db.Integer,
+            db.ForeignKey("users.id"),
+            nullable=False
+        )
+
+        status = db.Column(
+            db.Enum("pending", "accepted", "rejected", name="friend_status"),
+            default="pending",
+            nullable=False
+        )
+
+        created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+        sender = db.relationship("User", foreign_keys=[sender_id])
+        receiver = db.relationship("User", foreign_keys=[receiver_id])
+

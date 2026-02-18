@@ -6,7 +6,7 @@ from flask_jwt_extended import JWTManager
 app = Flask(__name__)
 
 # Banco
-app.config["SQLALCHEMY_DATABASE_URI"] = "mysql+pymysql://habitos_user:123456@localhost:3306/habitos"
+app.config["SQLALCHEMY_DATABASE_URI"] = "mysql+pymysql://root:123456@localhost:3306/habitos"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 # ✅ JWT (obrigatório para @jwt_required funcionar)
