@@ -4,28 +4,27 @@ from models.models import User, db, FriendRequest
 
 
 friend_request_parser = reqparse.RequestParser()
-friend_request_parser.add_argument("receiver_id", type=int, required=True)
+friend_request_parser.add_argument("receiver_id", type=int, required=True, location="json")
 
 
 class FriendRequestResource(Resource):
-
-    @jwt_required()
-    def post(self):
-        user_id = int(get_jwt_identity())
+     
+       @jwt_required()
+       def post(self):
+        sender_id = int(get_jwt_identity())
         data = friend_request_parser.parse_args()
         receiver_id = data["receiver_id"]
 
-        if user_id == receiver_id:
-            return {"message": "Você não pode adicionar a si mesmo."}, 400
+        if sender_id == receiver_id:
+            return {"message": "Você não pode enviar pedido para si mesmo."}, 400
 
         receiver = User.query.get(receiver_id)
         if not receiver:
             return {"message": "Usuário não encontrado."}, 404
 
-        # Verifica se já existe pedido entre eles
         existing = FriendRequest.query.filter(
-            ((FriendRequest.sender_id == user_id) & (FriendRequest.receiver_id == receiver_id)) |
-            ((FriendRequest.sender_id == receiver_id) & (FriendRequest.receiver_id == user_id))
+            ((FriendRequest.sender_id == sender_id) & (FriendRequest.receiver_id == receiver_id)) |
+            ((FriendRequest.sender_id == receiver_id) & (FriendRequest.receiver_id == sender_id))
         ).first()
 
         if existing:
@@ -35,15 +34,14 @@ class FriendRequestResource(Resource):
                 return {"message": "Vocês já são amigos."}, 400
 
         new_request = FriendRequest(
-            sender_id=user_id,
+            sender_id=sender_id,
             receiver_id=receiver_id,
             status="pending"
         )
-
         db.session.add(new_request)
         db.session.commit()
 
-        return {"message": "Pedido de amizade enviado."}, 201
+        return {"message": "Pedido de amizade enviado com sucesso."}, 201
 
 
 class PendingFriendRequestsResource(Resource):

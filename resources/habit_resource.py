@@ -2,6 +2,10 @@ from flask_restful import Resource, reqparse
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from sqlalchemy import func
 from models.models import db, Habit, HabitCompletion
+from services.solr_service import index_habit
+from services.solr_service import delete_document
+
+
 
 habit_parser = reqparse.RequestParser()
 habit_parser.add_argument("name", type=str, required=True, help="Nome é obrigatório")
@@ -107,6 +111,8 @@ class HabitResource(Resource):
 
         db.session.add(habit)
         db.session.commit()
+        index_habit(habit)
+
 
         return serialize_habit(habit), 201
 
@@ -147,6 +153,11 @@ class HabitResource(Resource):
         if not habit:
             return {"message": "Hábito não encontrado"}, 404
 
+        habit_solr_id = f"habit_{habit.id}"
+
         db.session.delete(habit)
         db.session.commit()
+
+        delete_document("habits", habit_solr_id)
+
         return {"message": "Hábito deletado"}, 200

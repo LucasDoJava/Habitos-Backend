@@ -2,11 +2,12 @@ from flask import Flask
 from flask_restful import Api
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager
+import os
 
 app = Flask(__name__)
 
 # Banco
-app.config["SQLALCHEMY_DATABASE_URI"] = "mysql+pymysql://root:123456@localhost:3306/habitos"
+app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("DATABASE_URL", "mysql+pymysql://root:123456@db:3306/habitos")
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 # ✅ JWT (obrigatório para @jwt_required funcionar)

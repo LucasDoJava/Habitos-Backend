@@ -1,5 +1,11 @@
 from flask_restful import Resource, reqparse
+from flask import request
+from sqlalchemy import or_
+
 from models.models import db, User, UserStats
+from services.solr_service import index_user
+from services.solr_service import delete_document
+
 
 # Parser para UPDATE (PUT) - senha opcional
 user_update_parser = reqparse.RequestParser()
@@ -9,22 +15,30 @@ user_update_parser.add_argument("password", type=str, required=False)  # opciona
 user_update_parser.add_argument("avatar", type=str, required=False)
 
 
+def _serialize_user_basic(u: User):
+    return {
+        "id": u.id,
+        "name": u.name,
+        "email": u.email,
+        "avatar": getattr(u, "avatar", None),
+    }
+
+
 class UserResource(Resource):
     def get(self, user_id=None):
         if user_id:
             user = User.query.get(user_id)
             if not user:
                 return {"message": "Usuário não encontrado"}, 404
-            return {
-                "id": user.id,
-                "name": user.name,
-                "email": user.email,
-                "avatar": user.avatar,
-                "created_at": user.created_at.isoformat()
-            }, 200
+
+            payload = _serialize_user_basic(user)
+            if getattr(user, "created_at", None):
+                payload["created_at"] = user.created_at.isoformat()
+
+            return payload, 200
 
         users = User.query.all()
-        return [{"id": u.id, "name": u.name, "email": u.email} for u in users], 200
+        return {"users": [_serialize_user_basic(u) for u in users]}, 200
 
     def post(self):
         # Parser para CREATE (POST) - senha obrigatória
@@ -50,6 +64,7 @@ class UserResource(Resource):
 
         db.session.add(user)
         db.session.commit()  # precisa do commit pra ter user.id
+        index_user(user)
 
         # 2) cria stats padrão pro usuário
         stats_existing = UserStats.query.filter_by(user_id=user.id).first()
@@ -98,6 +113,32 @@ class UserResource(Resource):
         if not user:
             return {"message": "Usuário não encontrado"}, 404
 
+        user_solr_id = f"user_{user.id}"
+
         db.session.delete(user)
         db.session.commit()
+
+        delete_document("users", user_solr_id)
+
         return {"message": "Usuário deletado"}, 200
+
+
+class UserSearchResource(Resource):
+    """
+    GET /users/search?q=texto
+    Retorna usuários filtrando por name ou email (sem Solr).
+    """
+    def get(self):
+        q = (request.args.get("q") or "").strip()
+        if not q:
+            return {"users": []}, 200
+
+        like = f"%{q}%"
+        users = User.query.filter(
+            or_(
+                User.name.ilike(like),
+                User.email.ilike(like)
+            )
+        ).limit(20).all()
+
+        return {"users": [_serialize_user_basic(u) for u in users]}, 200
