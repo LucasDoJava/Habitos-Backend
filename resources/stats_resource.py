@@ -112,3 +112,4 @@ class MyStatsResource(Resource):
         user_id = int(get_jwt_identity())
         stats = get_or_create_stats_for_user(user_id)
         return serialize_stats(stats), 200
+

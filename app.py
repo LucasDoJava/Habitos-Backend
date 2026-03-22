@@ -6,7 +6,7 @@ from resources.completion_resource import CompletionResource
 from resources.stats_resource import StatsResource, MyStatsResource
 from resources.login_resource import LoginResource
 from resources.ranking_resource import RankingResource
-from resources.friend_resource import FriendRequestResource, FriendsListResource, PendingFriendRequestsResource, RespondFriendRequestResource
+from resources.friend_resource import FriendRequestResource, FriendsListResource, PendingFriendRequestsResource, RespondFriendRequestResource, DeleteFriendResource
 from resources.habit_search_resource import HabitSearchResource
 
 from helpers.application import app, api
@@ -25,9 +25,12 @@ api.add_resource(FriendRequestResource, "/friend-request")
 api.add_resource(PendingFriendRequestsResource, "/friend-request/pending")
 api.add_resource(RespondFriendRequestResource, "/friend-request/<int:request_id>/<string:action>")
 api.add_resource(FriendsListResource, "/friends")
+api.add_resource(DeleteFriendResource, "/friends/<int:friend_id>")
 
 api.add_resource(HabitSearchResource, "/habits/search")
 api.add_resource(UserSearchResource, "/users/search")
+
+
 
 
 if __name__ == "__main__":

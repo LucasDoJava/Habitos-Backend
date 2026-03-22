@@ -2,7 +2,7 @@ from flask_restful import Resource, reqparse
 from flask import request
 from sqlalchemy import or_
 
-from models.models import db, User, UserStats
+from models.models import db, User, UserStats, FriendRequest, Habit, HabitCompletion
 from services.solr_service import index_user
 from services.solr_service import delete_document
 
@@ -25,7 +25,7 @@ def _serialize_user_basic(u: User):
 
 
 class UserResource(Resource):
-    def get(self, user_id=None): #retorna todos os usuarios
+    def get(self, user_id=None):
         if user_id:
             user = User.query.get(user_id)
             if not user:
@@ -41,7 +41,6 @@ class UserResource(Resource):
         return {"users": [_serialize_user_basic(u) for u in users]}, 200
 
     def post(self):
-        # senha obrigatória
         parser = reqparse.RequestParser()
         parser.add_argument("name", required=True)
         parser.add_argument("email", required=True)
@@ -49,12 +48,10 @@ class UserResource(Resource):
         parser.add_argument("avatar", required=False)
         args = parser.parse_args()
 
-        # evita email duplicado
         existing = User.query.filter_by(email=args["email"]).first()
         if existing:
             return {"message": "Email já cadastrado"}, 409
 
-        # cria usuário
         user = User(
             name=args["name"],
             email=args["email"],
@@ -64,9 +61,8 @@ class UserResource(Resource):
 
         db.session.add(user)
         db.session.commit()  
-        index_user(user) #indexa usuario no solr
+        index_user(user)
 
-        # cria stats padrão pro usuário
         stats_existing = UserStats.query.filter_by(user_id=user.id).first()
         if not stats_existing:
             default_stats = UserStats(
@@ -91,7 +87,6 @@ class UserResource(Resource):
         if not user:
             return {"message": "Usuário não encontrado"}, 404
 
-        # se trocar email, evita a colisão
         if data["email"] != user.email:
             existing = User.query.filter_by(email=data["email"]).first()
             if existing:
@@ -100,7 +95,6 @@ class UserResource(Resource):
         user.name = data["name"]
         user.email = data["email"]
         user.avatar = data.get("avatar")
-
         
         if data.get("password"):
             user.set_password(data["password"])
@@ -113,18 +107,49 @@ class UserResource(Resource):
         if not user:
             return {"message": "Usuário não encontrado"}, 404
 
-        user_solr_id = f"user_{user.id}" #ID no solr
-
-        db.session.delete(user)
-        db.session.commit()
-
-        delete_document("users", user_solr_id) # remove do solr
-
-        return {"message": "Usuário deletado"}, 200
+        try:
+            # 1. Deletar solicitações de amizade (onde o usuário é sender ou receiver)
+            friend_requests = FriendRequest.query.filter(
+                (FriendRequest.sender_id == user_id) | 
+                (FriendRequest.receiver_id == user_id)
+            ).all()
+            
+            for request in friend_requests:
+                db.session.delete(request)
+            
+            # 2. Deletar completions de hábitos
+            completions = HabitCompletion.query.filter_by(user_id=user_id).all()
+            for completion in completions:
+                db.session.delete(completion)
+            
+            # 3. Deletar hábitos do usuário
+            habits = Habit.query.filter_by(user_id=user_id).all()
+            for habit in habits:
+                db.session.delete(habit)
+            
+            # 4. Deletar estatísticas do usuário
+            if user.stats:
+                db.session.delete(user.stats)
+            
+            # 5. Por fim, deletar o usuário
+            db.session.delete(user)
+            
+            # Commit todas as alterações
+            db.session.commit()
+            
+            # Remover do Solr
+            user_solr_id = f"user_{user.id}"
+            delete_document("users", user_solr_id)
+            
+            return {"message": "Usuário deletado com sucesso"}, 200
+            
+        except Exception as e:
+            db.session.rollback()
+            print(f"Erro ao deletar usuário: {e}")
+            return {"message": f"Erro ao deletar usuário: {str(e)}"}, 500
 
 
 class UserSearchResource(Resource):
-    #remover quando adicionar o solr
     def get(self):
         q = (request.args.get("q") or "").strip()
         if not q:

@@ -121,3 +121,23 @@ class FriendsListResource(Resource):
             })
 
         return result, 200
+
+class DeleteFriendResource(Resource):
+    @jwt_required()
+    def delete(self, friend_id):
+        user_id = int(get_jwt_identity())
+        
+     
+        friendship = FriendRequest.query.filter(
+            ((FriendRequest.sender_id == user_id) & (FriendRequest.receiver_id == friend_id)) |
+            ((FriendRequest.sender_id == friend_id) & (FriendRequest.receiver_id == user_id)),
+            FriendRequest.status == 'accepted'
+        ).first()
+        
+        if not friendship:
+            return {"message": "Amizade não encontrada"}, 404
+        
+        db.session.delete(friendship)
+        db.session.commit()
+        
+        return {"message": "Amigo removido com sucesso"}, 200
